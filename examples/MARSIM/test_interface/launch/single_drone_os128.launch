@@ -7,8 +7,8 @@
     <arg name="global_cloud_topic" value="/map_generator/global_cloud"/>
     <arg name="odom_topic" value="/lidar_slam/odom"/>
 
-    <arg name="map_name" value="$(find test_interface)/pcd/random_map_8_1278.pcd"/>
-    <arg name="downsample_resolution" value="0.1"/>
+    <arg name="map_name" default="$(find test_interface)/pcd/random_map_8_1278.pcd"/>
+    <arg name="downsample_resolution" default="0.1"/>
 
     <arg name="use_uav_extra_model" value = "1"/>
 

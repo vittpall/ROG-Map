@@ -15,7 +15,15 @@
          obstacles, attach_radius_vox is too small. If everything lands in
          occlusion_frontier, it is too large. -->
 
-    <node name="occlusion_boundary_node" pkg="occlusion_boundary"
+    <!-- Node is deliberately named rm_node, NOT occlusion_boundary_node.
+         viz_default.rviz hardcodes every ROG-Map display to the /rm_node/...
+         namespace (map_bound, occ, unk, frontier, esdf). Naming it anything
+         else silently empties that whole RViz config.
+
+         Consequence: run this INSTEAD of rog_map_example marsim_example.launch,
+         never alongside it. Both create a ROGMap and both would claim the
+         name, so the second launched kills the first. -->
+    <node name="rm_node" pkg="occlusion_boundary"
           type="occlusion_boundary_node" output="screen">
         <rosparam command="load"
                   file="$(find occlusion_boundary)/config/occlusion_boundary.yaml"/>
