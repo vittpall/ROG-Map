@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>occlusion_boundary</name>
+  <version>0.0.1</version>
+  <description>
+    Sensor-independent occlusion-boundary extraction from a ROG-Map occupancy grid.
+
+    Detects, in map space, the voxels through which an unseen agent could emerge --
+    the 3D analogue of a 2D range-jump occlusion corner, but without needing any
+    beam-grid adjacency, so it works with non-repetitive scanners (Livox Avia /
+    Mid-360) as well as beam lidars (VLP-32, OS-128).
+
+    This is the visualisation-only stage: it publishes the boundary voxels so the
+    detector can be validated in RViz before being wired into a controller.
+  </description>
+
+  <maintainer email="palladinovittorio16@gmail.com">Vittorio Palladino</maintainer>
+  <license>GPLv2</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>rog_map</depend>
+  <depend>sensor_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>pcl_ros</depend>
+  <depend>pcl_conversions</depend>
+</package>

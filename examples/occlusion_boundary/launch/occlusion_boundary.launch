@@ -1,0 +1,30 @@
+<launch>
+    <!-- Occlusion-boundary extraction, visualisation only.
+
+         Pair with a MARSIM world, e.g.
+           roslaunch test_interface single_drone_mid360.launch
+         then drive the drone with rog_map_example's keyboard_control.py.
+
+         Publishes:
+           ~/occlusion_frontier  frontier voxels attached to an occluder
+                                 (an unseen agent could be behind these)
+           ~/open_frontier       frontier voxels with no occluder nearby
+                                 (max-range / FOV limits - NOT keep-out worthy)
+
+         Watch both. If occlusion_frontier is empty but open_frontier hugs the
+         obstacles, attach_radius_vox is too small. If everything lands in
+         occlusion_frontier, it is too large. -->
+
+    <node name="occlusion_boundary_node" pkg="occlusion_boundary"
+          type="occlusion_boundary_node" output="screen">
+        <rosparam command="load"
+                  file="$(find occlusion_boundary)/config/occlusion_boundary.yaml"/>
+
+        <param name="odom_topic" value="/lidar_slam/odom"/>
+        <param name="frame_id" value="world"/>
+        <param name="query_range" value="8.0"/>
+        <param name="query_range_z" value="2.5"/>
+        <param name="attach_radius_vox" value="2"/>
+        <param name="rate" value="5.0"/>
+    </node>
+</launch>
