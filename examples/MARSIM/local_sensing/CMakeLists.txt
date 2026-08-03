@@ -76,7 +76,9 @@ add_definitions(-DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\")
     include/ikd-Tree/ikd_Tree.cpp
     include/FOV_Checker/FOV_Checker.cpp
   )
- set(glfw3_LIBS /usr/lib/x86_64-linux-gnu/libglfw.so)
+ # was hardcoded to /usr/lib/x86_64-linux-gnu/libglfw.so, which does not exist
+ # in a conda/mamba ROS install. Search CMAKE_PREFIX_PATH instead.
+ find_library(glfw3_LIBS NAMES glfw glfw3 REQUIRED)
   target_link_libraries( opengl_render_node
     # include
     ${catkin_LIBRARIES}
