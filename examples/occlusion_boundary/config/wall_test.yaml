@@ -16,8 +16,13 @@ rog_map:
   frontier_extraction_en: true
 
   # Virtual ceil and ground
-  virtual_ceil_height: 9999
-  virtual_ground_height: -9999
+  # A ground plane is technically an occluder: everything below it is hidden,
+  # so sub-floor voxels became 'occlusion frontier' all around the drone and
+  # d_occ sat at ~2 m even at the start point, making 100% of rollouts
+  # infeasible. Nothing emerges from underground -- clamp it away. This is
+  # exactly what these two parameters exist for.
+  virtual_ceil_height: 4.0
+  virtual_ground_height: 0.0
 
   block_inf_pt: false
   kd_tree_en: false
