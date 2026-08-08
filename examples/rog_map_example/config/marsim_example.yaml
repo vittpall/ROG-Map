@@ -74,8 +74,10 @@ rog_map:
     blind_filter_dis: 1.0
     batch_update_size: 1
     local_update_box: [ 50,50,5 ]
-    # The range of raycasting [m].
-    ray_range: [ 0.0, 5 ]
+    # The range of raycasting [m]. Must reach the lidar's sensing_horizon
+    # (15 m for the mid360 in single_drone.xml) or structure beyond this
+    # distance never enters the map.
+    ray_range: [ 0.0, 15 ]
 
     p_min: 0.12
     p_miss: 0.49
