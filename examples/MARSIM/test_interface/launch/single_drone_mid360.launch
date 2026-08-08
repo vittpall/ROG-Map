@@ -7,7 +7,9 @@
          comparing neighbouring beams will not work here, which is the whole
          point of testing against this lidar_type. -->
 
-    <arg name="use_gpu_" value="false"/>
+    <!-- default so it can be overridden: use_gpu_:=true moves the lidar raycast
+         onto opengl_render_node, freeing CPU the estimator and planner need. -->
+    <arg name="use_gpu_" default="false"/>
 
     <arg name="drone_num" value="1"/>
 

@@ -1,4 +1,4 @@
-#############################################
+  #############################################
 #   Mapping                                 #
 #############################################
 # The points [out of local map] is considered to be [OUT_OF_MAP]
@@ -6,7 +6,7 @@
 
 rog_map:
   resolution: 0.1
-  inflation_resolution: 0.2
+  inflation_resolution: 0.1
   inflation_step: 1
   unk_inflation_en: false
   unk_inflation_step: 1
@@ -22,7 +22,13 @@ rog_map:
   # infeasible. Nothing emerges from underground -- clamp it away. This is
   # exactly what these two parameters exist for.
   virtual_ceil_height: 4.0
-  virtual_ground_height: 0.0
+  # 0.0 only clamped voxels BELOW the floor; the floor's own surface (z~0) still
+  # passed isFrontier, and unsampled gaps between ground returns became frontier
+  # right under the drone. With a 3D keep-out distance those sit ~1 m away and
+  # beat the wall at 5 m, so d_occ tracked the floor instead of the occluder.
+  # Lifted clear of the surface: nothing below this is unknown, occupied, or
+  # frontier. Must stay well under cruise_z.
+  virtual_ground_height: 0.3
 
   block_inf_pt: false
   kd_tree_en: false

@@ -22,7 +22,7 @@
          (run it with the help flag to see the geometry options).
     -->
 
-    <arg name="use_gpu_" value="false"/>
+    <arg name="use_gpu_" value="true"/>
     <arg name="drone_num" value="1"/>
     <arg name="frame_id" value="world"/>
     <arg name="odom_topic" value="/lidar_slam/odom"/>
@@ -30,6 +30,11 @@
     <arg name="map_name" default="$(find occlusion_boundary)/pcd/wall_scene.pcd"/>
     <arg name="downsample_resolution" default="0.1"/>
     <arg name="lidar_type" default="mid360"/>
+    <!-- true swaps perfect_drone for the real quadrotor dynamics + cascadePID,
+         which also publishes /quad_0/imu. Required for FAST-LIO: perfect_drone
+         assigns the commanded state directly, so its acceleration is impulsive
+         and no IMU can represent it. -->
+    <arg name="use_dynamics" default="false"/>
 
     <arg name="use_uav_extra_model" value="1"/>
 
@@ -67,6 +72,7 @@
         <arg name="odom_topic" value="$(arg odom_topic)"/>
         <arg name="use_gpu" value="$(arg use_gpu_)"/>
         <arg name="use_uav_extra_model_" value="$(arg use_uav_extra_model)"/>
+        <arg name="use_dynamics" value="$(arg use_dynamics)"/>
     </include>
 
 </launch>

@@ -30,9 +30,23 @@
 
         <param name="odom_topic" value="/lidar_slam/odom"/>
         <param name="frame_id" value="world"/>
-        <param name="query_range" value="8.0"/>
+        <!-- Box half-extent enumerated at map resolution each tick, so cost grows
+             with the SQUARE of this (z is fixed below). 8 -> 12 m is ~2.3x the
+             voxels; expect the node to fall from ~4.5 Hz to ~2 Hz against the 5 Hz
+             timer, which means the planner sees a staler frontier. -->
+        <param name="query_range" value="12.0"/>
+        <!-- Left alone deliberately: the drone flies at fixed altitude, so z costs
+             voxels without adding anything the 2D keep-out can use. -->
         <param name="query_range_z" value="2.5"/>
         <param name="attach_radius_vox" value="2"/>
+        <!-- Reject frontier voxels the drone can actually SEE. Without this,
+             every wall voxel that never received a lidar return stays UNKNOWN,
+             is adjacent to the free air in front of the wall, and is surrounded
+             by occupied cells so it passes both isFrontier() and the
+             attachment test, and the whole wall face fills with keep-out
+             bubbles. Set false to reproduce that. -->
+        <param name="sightline_check" value="true"/>
+        <param name="sightline_max_range" value="15.0"/>
         <param name="rate" value="5.0"/>
     </node>
 </launch>

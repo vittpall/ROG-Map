@@ -31,7 +31,7 @@ rog_map:
     threshold: 0.3
 
   esdf:
-    enable: true
+    enable: false
     resolution: 0.1
     # The range of esdf around the odom [m].
     local_update_box: [ 5,5,3 ]

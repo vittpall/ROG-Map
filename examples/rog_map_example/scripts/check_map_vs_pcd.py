@@ -19,14 +19,33 @@ TOPIC = "/rm_node/rog_map/occ"
 
 
 def load_pcd(path):
+    """Read xyz from an ascii or binary PCD. MARSIM ships both."""
     with open(path, "rb") as f:
-        hdr = b""
-        while not hdr.endswith(b"DATA binary\n"):
-            c = f.read(1)
-            if not c:
-                raise ValueError("not a binary PCD")
-            hdr += c
-        return np.frombuffer(f.read(), dtype=np.float32).reshape(-1, 3)
+        fields, count = [], 0
+        while True:
+            line = f.readline()
+            if not line:
+                raise ValueError("no DATA section in %s" % path)
+            tok = line.decode("ascii", "replace").split()
+            if not tok:
+                continue
+            if tok[0] == "FIELDS":
+                fields = tok[1:]
+            elif tok[0] == "POINTS":
+                count = int(tok[1])
+            elif tok[0] == "DATA":
+                fmt = tok[1]
+                break
+        n = len(fields)
+        if fmt == "binary":
+            a = np.frombuffer(f.read(count * n * 4), dtype=np.float32).reshape(-1, n)
+        elif fmt == "ascii":
+            a = np.loadtxt(f, dtype=np.float32).reshape(-1, n)
+        else:
+            raise ValueError("unsupported PCD format: %s" % fmt)
+        idx = [fields.index(c) for c in ("x", "y", "z")]
+        a = a[:, idx]
+        return a[np.isfinite(a).all(axis=1)]
 
 
 def main():
