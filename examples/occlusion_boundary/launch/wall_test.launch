@@ -22,7 +22,7 @@
          (run it with the help flag to see the geometry options).
     -->
 
-    <arg name="use_gpu_" value="false"/>
+    <arg name="use_gpu_" value="true"/>
     <arg name="drone_num" value="1"/>
     <arg name="frame_id" value="world"/>
     <arg name="odom_topic" value="/lidar_slam/odom"/>
@@ -35,6 +35,17 @@
          assigns the commanded state directly, so its acceleration is impulsive
          and no IMU can represent it. -->
     <arg name="use_dynamics" default="false"/>
+
+    <!-- Spawn pose. Feeds perfect_drone's init_position, the dynamics plant's
+         init_state, AND FAST-LIO's common/init_pos, so all three stay
+         consistent from this one place: a mismatch between the spawn and
+         FAST-LIO's init_pos is a CONSTANT position error that looks like drift
+         but never grows.
+         Defaults put the drone at the origin, 10 m in front of the wall. -->
+    <arg name="init_x" default="0.0"/>
+    <arg name="init_y" default="0.0"/>
+    <arg name="init_z" default="1.0"/>
+    <arg name="init_yaw" default="0.0"/>
 
     <arg name="use_uav_extra_model" value="1"/>
 
@@ -63,10 +74,10 @@
         <arg name="drone_id" value="0"/>
         <arg name="uav_num_" value="$(arg drone_num)"/>
         <arg name="lidar_type" value="$(arg lidar_type)"/>
-        <arg name="init_x_" value="0.0"/>
-        <arg name="init_y_" value="0.0"/>
-        <arg name="init_z_" value="1.0"/>
-        <arg name="init_yaw" value="0.0"/>
+        <arg name="init_x_" value="$(arg init_x)"/>
+        <arg name="init_y_" value="$(arg init_y)"/>
+        <arg name="init_z_" value="$(arg init_z)"/>
+        <arg name="init_yaw" value="$(arg init_yaw)"/>
         <arg name="map_name_" value="$(arg map_name)"/>
         <arg name="downsample_resolution_" value="$(arg downsample_resolution)"/>
         <arg name="odom_topic" value="$(arg odom_topic)"/>

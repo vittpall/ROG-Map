@@ -27,35 +27,33 @@
  *   2. max-range limits       <- nothing is hiding, the sensor just stops
  *   3. FOV edges              <- ditto (very visible on the Mid-360)
  *
- * Only (1) warrants a keep-out. Two discriminators are applied in series, cheap
- * one first:
+ * Only (1) warrants a keep-out, and ONE discriminator separates it:
  *
- *   a) attachment to an occluder -- a frontier voxel with an OCCUPIED voxel
- *      within `attach_radius_vox` cells is shadow-cast; one floating in free
- *      space is a range/FOV artefact. O(r^3) on a tiny r, so it runs on every
- *      candidate.
+ *   attachment to an occluder -- a frontier voxel with an OCCUPIED voxel within
+ *   `attach_radius_vox` cells is shadow-cast; one floating in free space is a
+ *   range/FOV artefact. O(r^3) on a tiny r, so it runs on every candidate.
  *
- *   b) NOT VISIBLE FROM THE EGO -- see isHiddenFromEgo(). Attachment alone is
- *      not sufficient and fails in a way that ruins the keep-out: a wall voxel
- *      that simply never received a lidar return stays UNKNOWN (one hit is
- *      enough to make a voxel OCCUPIED, and one traversing ray is enough to
- *      make it FREE, so "unknown" means zero rays touched it). That pinhole sits
- *      against the free air the lidar carved in front of the wall, so
- *      isFrontier() accepts it, and it is buried in wall so (a) accepts it too.
- *      Every hole in a wall face then grows its own keep-out bubble and the
- *      whole wall ends up upholstered in them.
+ * So the full test is: UNKNOWN, touching at least one KNOWN_FREE cell (that is
+ * ProbMap::isFrontier), and with an OCCUPIED cell nearby.
  *
- *      The physical property that separates the two cases is visibility: a
- *      pinhole is one the drone can see straight into, so nothing can be hiding
- *      in it. A real shadow voxel is by definition one the drone CANNOT see.
+ * KNOWN LIMITATION. This admits pinholes: a wall voxel that simply never
+ * received a lidar return stays UNKNOWN (one hit makes a voxel OCCUPIED, one
+ * traversing ray makes it FREE, so "unknown" means zero rays touched it). Such a
+ * hole sits against the free air in front of the wall, so isFrontier() accepts
+ * it, and it is buried in wall, so the attachment test accepts it too -- and the
+ * wall face fills with keep-out bubbles the drone can see straight into.
  *
- * Note (b) subsumes most of what (a) does -- a range/FOV frontier is reached by
- * an unobstructed ray and is rejected as visible. (a) is kept because it is much
- * cheaper and disposes of the bulk of the candidates before any ray marching.
+ * No neighbourhood COUNT separates those from a real shadow mouth: a pinhole in
+ * a wall 4 voxels thick has ~9 free neighbours in front, ~8 occupied around it
+ * and ~9 unknown behind, which is what a shadow mouth looks like too. The
+ * missing information is DIRECTION -- the pinhole's neighbour toward the ego is
+ * free, the shadow voxel's is not -- which is what a visibility ray march
+ * supplied before it was removed. Raising the scene's point density (lower
+ * point_filt_num) is the mitigation that remains.
  *
  * Both classes are published separately, on purpose: seeing the REJECTED set is
- * what tells you whether the discriminators are doing their job or quietly
- * eating real boundaries.
+ * what tells you whether the discriminator is doing its job or quietly eating
+ * real boundaries.
  *
  * STATUS: visualisation only. Nothing here feeds a controller yet.
  */
@@ -98,41 +96,6 @@ class OcclusionBoundaryExtractor {
     // this many cells (Chebyshev). 1 is strict and drops boundaries whose
     // occluder edge is one voxel thinner than the frontier; 2 is a safer start.
     nh_.param<int>("attach_radius_vox", attach_radius_vox_, 2);
-    // Second discriminator: reject frontier voxels the ego can see (see the
-    // header). Off restores the old attachment-only behaviour, which is worth
-    // having to confirm this filter is what changed a result.
-    nh_.param<bool>("sightline_check", sightline_check_, true);
-    // Ray marching is the only per-candidate cost here that is not O(1), so it is
-    // bounded. A shadow voxel finds its occluder within a step or two; only a
-    // VISIBLE voxel marches the full way, and running out of steps is treated as
-    // visible -- the conservative direction is the other one (keeping a boundary),
-    // but an unbounded march on a 5 Hz timer is worse than a missed voxel.
-    nh_.param<double>("sightline_max_range", sightline_max_range_, 15.0);
-    // Start the march this far from the voxel so its own cell, and the occluder
-    // face it is pressed against, are not what blocks the ray.
-    //
-    // MUST stay well under the occluder's thickness. Set to 0.35 against a 0.2 m
-    // wall it deleted the side edges outright: a voxel pressed against the BACK
-    // face has the skip carry the march clean through the wall into the free air
-    // in front, so nothing blocks it, and the genuine shadow voxel is rejected
-    // as visible. Oblique rays near a silhouette edge leave the occluder's
-    // x-extent sooner still, which is why the lateral edges go first.
-    // 0.0 is correct here: the voxel's own cell is UNKNOWN, not occupied, so it
-    // cannot block its own ray, and the march starts one half-step out anyway.
-    nh_.param<double>("sightline_skip", sightline_skip_, 0.0);
-    // Frontier voxels below this z are dropped outright. The volume under the
-    // ground plane is UNKNOWN (no return ever lands there), attached to the
-    // ground (an occluder) and hidden from the ego, so it passes every other
-    // test into occlusion_frontier -- but nothing can emerge from underground,
-    // so it is pure false keep-out. Default matches virtual_ground_height.
-    nh_.param<double>("min_frontier_z", min_frontier_z_, 0.3);
-    // Reject frontier voxels roofed by solid geometry (see cappedByOccluder).
-    // Set false to reproduce the phantom under-floor frontier.
-    nh_.param<bool>("bury_check", bury_check_, true);
-    // How far up to look for that roof [m]. Only has to clear the thickness of
-    // the occluder plus its inflation -- this marches per candidate voxel, so
-    // it is the one cost here that scales with the value.
-    nh_.param<double>("bury_height", bury_height_, 1.0);
     // Keep every Nth KNOWN_FREE voxel on free_voxels. Free space is the LARGEST
     // class in an observed map -- the query box alone holds ~1.3M cells at 8 m
     // and 0.1 m resolution -- and publishing all of it is what killed RViz on
@@ -151,14 +114,8 @@ class OcclusionBoundaryExtractor {
     timer_ = nh_.createTimer(ros::Duration(1.0 / rate_),
                              &OcclusionBoundaryExtractor::update, this);
 
-    ROS_INFO("[occlusion_boundary] odom=%s query=%.1fm (z %.1fm) attach_radius=%d vox "
-             "sightline=%s (max %.1fm)",
-             odom_topic_.c_str(), query_range_, query_range_z_, attach_radius_vox_,
-             sightline_check_ ? "on" : "OFF", sightline_max_range_);
-    if (!sightline_check_) {
-      ROS_WARN("[occlusion_boundary] sightline_check DISABLED -- every unobserved "
-               "hole in a wall face will be published as an occlusion boundary");
-    }
+    ROS_INFO("[occlusion_boundary] odom=%s query=%.1fm (z %.1fm) attach_radius=%d vox",
+             odom_topic_.c_str(), query_range_, query_range_z_, attach_radius_vox_);
   }
   
  private:
@@ -193,77 +150,6 @@ class OcclusionBoundaryExtractor {
     return false;
   }
 
-  /* True if an OCCUPIED voxel sits directly ABOVE `pos` within bury_height_.
-   *
-   * This is the "nothing emerges from underground" test, and it is what a flat
-   * min_frontier_z cannot express. The ground plane is a solid sheet; the whole
-   * volume beneath it is UNKNOWN (no return ever lands there), touches the free
-   * air above through the sheet's own cells, and is hidden from the ego -- so it
-   * passes isFrontier(), attachedToOccluder() AND isHiddenFromEgo() and lands in
-   * occlusion_frontier as a wall of phantom voxels under the floor. The keep-out
-   * then measures distance DOWNWARD into solid earth.
-   *
-   * A z threshold only works when the occluder is level and its height is known
-   * in advance. Capping is the actual invariant: a volume roofed by solid
-   * geometry cannot emit an agent, whatever its altitude. Under the floor, under
-   * the wall's footprint and inside the wall's own unobserved interior all get
-   * rejected; the genuine shadow cast ACROSS the floor behind the wall has open
-   * sky above it and is kept, which is the case that must survive.
-   *
-   * Marched in metres at map resolution for the same reason the other two are:
-   * only the Vec3f overloads are public. */
-  bool cappedByOccluder(const Vec3f& pos) const {
-    const double res = map_->getResolution();
-    for (double dz = res; dz <= bury_height_; dz += res) {
-      if (map_->isOccupied(Vec3f(pos.x(), pos.y(), pos.z() + dz))) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /* True if the straight line from `pos` to the ego is blocked by an OCCUPIED
-   * voxel -- i.e. the drone cannot see `pos`, so an agent could be hiding there.
-   *
-   * This is what separates a genuine shadow voxel from a pinhole in an observed
-   * surface. Both are UNKNOWN, both touch free space, both are buried in
-   * occupied neighbours, so no neighbourhood COUNT tells them apart: a pinhole
-   * in a wall 4 voxels thick has ~9 free neighbours in front, ~8 occupied around
-   * it and ~9 unknown behind it (the wall's own unobserved interior), which is
-   * indistinguishable from a shadow mouth by counting alone. Direction is the
-   * missing information -- the pinhole's neighbour TOWARD the ego is free, the
-   * shadow voxel's is not.
-   *
-   * Marched rather than tested one step out because a single sample is fooled
-   * wherever the sightline runs nearly tangent to a surface: the step lands in a
-   * neighbouring free cell while the ray is genuinely blocked further along.
-   *
-   * Stepping in metres, at half the map resolution, for the same reason
-   * attachedToOccluder() does: only the Vec3f query overloads are public, and
-   * half-resolution steps cannot skip over a one-voxel-thick occluder. */
-  bool isHiddenFromEgo(const Vec3f& pos, const Vec3f& ego) const {
-    const Vec3f delta = ego - pos;
-    const double dist = delta.norm();
-    if (dist < 1e-6) return false;
-
-    const double step = map_->getResolution() * 0.5;
-    const double reach = std::min(dist, sightline_max_range_);
-    const Vec3f dir = delta / dist;
-
-    // Start one step out: the voxel's own cell is UNKNOWN by construction, so
-    // sampling it proves nothing. Stop before the ego, whose cell is free anyway.
-    for (double s = std::max(step, sightline_skip_); s < reach; s += step) {
-      // Materialised into a Vec3f rather than passed as an Eigen expression:
-      // isOccupied() is overloaded on Vec3f and Vec3i, an unevaluated CwiseBinaryOp
-      // converts to both, and the call is ambiguous.
-      const Vec3f sample = pos + dir * s;
-      if (map_->isOccupied(sample)) {
-        return true;      // something solid between the ego and this voxel
-      }
-    }
-    return false;         // unobstructed line of sight: nothing can hide here
-  }
-
   void update(const ros::TimerEvent&) {
     Vec3f ego;
     {
@@ -282,18 +168,9 @@ class OcclusionBoundaryExtractor {
     map_->boxSearch(box_min, box_max, GridType::UNKNOWN, unknown_pts);
 
     pcl::PointCloud<pcl::PointXYZ> occlusion_cloud, open_cloud;
-    size_t n_visible = 0;   // attached to an occluder, but the ego can see it
-    size_t n_buried = 0;    // roofed by solid geometry: nothing can emerge
 
     for (const auto& p : unknown_pts) {
-      if (p.z() < min_frontier_z_) continue;   // underground: nothing hides there
       if (!map_->isFrontier(p)) continue;
-      // Before any of the shadow tests: a roofed volume emits nothing, so it is
-      // not a boundary of any kind -- not occlusion, not open.
-      if (bury_check_ && cappedByOccluder(p)) {
-        ++n_buried;
-        continue;
-      }
 
       pcl::PointXYZ pt(static_cast<float>(p.x()),
                        static_cast<float>(p.y()),
@@ -301,12 +178,6 @@ class OcclusionBoundaryExtractor {
       // Cheap test first: it disposes of most candidates without any marching.
       if (!attachedToOccluder(p)) {
         open_cloud.push_back(pt);        // range / FOV limit: nothing hiding
-        continue;
-      }
-      // Attached, but visible => a hole in an observed surface, not a shadow.
-      if (sightline_check_ && !isHiddenFromEgo(p, ego)) {
-        ++n_visible;
-        open_cloud.push_back(pt);
         continue;
       }
       occlusion_cloud.push_back(pt);     // shadow-cast: an agent could hide here
@@ -345,14 +216,8 @@ class OcclusionBoundaryExtractor {
     }
 
     if (log_counter_++ % static_cast<int>(rate_ * 2) == 0) {
-      // visible= is the diagnostic for this filter: a large count means the map
-      // is full of surface pinholes (raise the scene's point density / lower
-      // point_filt_num), a zero count with sightline_check on means it is not
-      // firing at all.
-      ROS_INFO("[occlusion_boundary] unknown=%zu  occlusion=%zu  open=%zu "
-               "(visible-rejected=%zu buried-rejected=%zu)",
-               unknown_pts.size(), occlusion_cloud.size(), open_cloud.size(),
-               n_visible, n_buried);
+      ROS_INFO("[occlusion_boundary] unknown=%zu  occlusion=%zu  open=%zu",
+               unknown_pts.size(), occlusion_cloud.size(), open_cloud.size());
     }
   }
 
@@ -382,12 +247,6 @@ class OcclusionBoundaryExtractor {
   double query_range_z_{2.5};
   double rate_{5.0};
   int attach_radius_vox_{2};
-  bool sightline_check_{true};
-  double sightline_max_range_{15.0};
-  double sightline_skip_{0.0};
-  double min_frontier_z_{0.3};
-  bool bury_check_{true};
-  double bury_height_{1.0};
   int log_counter_{0};
 };
 

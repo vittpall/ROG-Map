@@ -75,14 +75,6 @@
              voxels without adding anything the 2D keep-out can use. -->
         <param name="query_range_z" value="$(arg query_range_z)"/>
         <param name="attach_radius_vox" value="2"/>
-        <!-- Reject frontier voxels the drone can actually SEE. Without this,
-             every wall voxel that never received a lidar return stays UNKNOWN,
-             is adjacent to the free air in front of the wall, and is surrounded
-             by occupied cells so it passes both isFrontier() and the
-             attachment test, and the whole wall face fills with keep-out
-             bubbles. Set false to reproduce that. -->
-        <param name="sightline_check" value="true"/>
-        <param name="sightline_max_range" value="15.0"/>
         <param name="rate" value="5.0"/>
     </node>
 </launch>
