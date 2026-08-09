@@ -110,11 +110,40 @@ class OcclusionBoundaryExtractor {
     nh_.param<double>("sightline_max_range", sightline_max_range_, 15.0);
     // Start the march this far from the voxel so its own cell, and the occluder
     // face it is pressed against, are not what blocks the ray.
+    //
+    // MUST stay well under the occluder's thickness. Set to 0.35 against a 0.2 m
+    // wall it deleted the side edges outright: a voxel pressed against the BACK
+    // face has the skip carry the march clean through the wall into the free air
+    // in front, so nothing blocks it, and the genuine shadow voxel is rejected
+    // as visible. Oblique rays near a silhouette edge leave the occluder's
+    // x-extent sooner still, which is why the lateral edges go first.
+    // 0.0 is correct here: the voxel's own cell is UNKNOWN, not occupied, so it
+    // cannot block its own ray, and the march starts one half-step out anyway.
     nh_.param<double>("sightline_skip", sightline_skip_, 0.0);
+    // Frontier voxels below this z are dropped outright. The volume under the
+    // ground plane is UNKNOWN (no return ever lands there), attached to the
+    // ground (an occluder) and hidden from the ego, so it passes every other
+    // test into occlusion_frontier -- but nothing can emerge from underground,
+    // so it is pure false keep-out. Default matches virtual_ground_height.
+    nh_.param<double>("min_frontier_z", min_frontier_z_, 0.3);
+    // Reject frontier voxels roofed by solid geometry (see cappedByOccluder).
+    // Set false to reproduce the phantom under-floor frontier.
+    nh_.param<bool>("bury_check", bury_check_, true);
+    // How far up to look for that roof [m]. Only has to clear the thickness of
+    // the occluder plus its inflation -- this marches per candidate voxel, so
+    // it is the one cost here that scales with the value.
+    nh_.param<double>("bury_height", bury_height_, 1.0);
+    // Keep every Nth KNOWN_FREE voxel on free_voxels. Free space is the LARGEST
+    // class in an observed map -- the query box alone holds ~1.3M cells at 8 m
+    // and 0.1 m resolution -- and publishing all of it is what killed RViz on
+    // the unknown map. 4 keeps the shape of the visible region at 1/4 the
+    // points. 1 publishes everything; expect RViz to struggle.
+    nh_.param<int>("free_stride", free_stride_, 4);
     nh_.param<double>("rate", rate_, 5.0);
 
     pub_occlusion_ = nh_.advertise<sensor_msgs::PointCloud2>("occlusion_frontier", 1);
     pub_open_ = nh_.advertise<sensor_msgs::PointCloud2>("open_frontier", 1);
+    pub_free_ = nh_.advertise<sensor_msgs::PointCloud2>("free_voxels", 1);
 
     sub_odom_ = nh_.subscribe(odom_topic_, 10,
                               &OcclusionBoundaryExtractor::odomCallback, this);
@@ -159,6 +188,35 @@ class OcclusionBoundaryExtractor {
             return true;
           }
         }
+      }
+    }
+    return false;
+  }
+
+  /* True if an OCCUPIED voxel sits directly ABOVE `pos` within bury_height_.
+   *
+   * This is the "nothing emerges from underground" test, and it is what a flat
+   * min_frontier_z cannot express. The ground plane is a solid sheet; the whole
+   * volume beneath it is UNKNOWN (no return ever lands there), touches the free
+   * air above through the sheet's own cells, and is hidden from the ego -- so it
+   * passes isFrontier(), attachedToOccluder() AND isHiddenFromEgo() and lands in
+   * occlusion_frontier as a wall of phantom voxels under the floor. The keep-out
+   * then measures distance DOWNWARD into solid earth.
+   *
+   * A z threshold only works when the occluder is level and its height is known
+   * in advance. Capping is the actual invariant: a volume roofed by solid
+   * geometry cannot emit an agent, whatever its altitude. Under the floor, under
+   * the wall's footprint and inside the wall's own unobserved interior all get
+   * rejected; the genuine shadow cast ACROSS the floor behind the wall has open
+   * sky above it and is kept, which is the case that must survive.
+   *
+   * Marched in metres at map resolution for the same reason the other two are:
+   * only the Vec3f overloads are public. */
+  bool cappedByOccluder(const Vec3f& pos) const {
+    const double res = map_->getResolution();
+    for (double dz = res; dz <= bury_height_; dz += res) {
+      if (map_->isOccupied(Vec3f(pos.x(), pos.y(), pos.z() + dz))) {
+        return true;
       }
     }
     return false;
@@ -225,9 +283,17 @@ class OcclusionBoundaryExtractor {
 
     pcl::PointCloud<pcl::PointXYZ> occlusion_cloud, open_cloud;
     size_t n_visible = 0;   // attached to an occluder, but the ego can see it
+    size_t n_buried = 0;    // roofed by solid geometry: nothing can emerge
 
     for (const auto& p : unknown_pts) {
+      if (p.z() < min_frontier_z_) continue;   // underground: nothing hides there
       if (!map_->isFrontier(p)) continue;
+      // Before any of the shadow tests: a roofed volume emits nothing, so it is
+      // not a boundary of any kind -- not occlusion, not open.
+      if (bury_check_ && cappedByOccluder(p)) {
+        ++n_buried;
+        continue;
+      }
 
       pcl::PointXYZ pt(static_cast<float>(p.x()),
                        static_cast<float>(p.y()),
@@ -249,15 +315,44 @@ class OcclusionBoundaryExtractor {
     publish(occlusion_cloud, pub_occlusion_);
     publish(open_cloud, pub_open_);
 
+    // Observed free space in the same box: what the ego has actually SEEN, as
+    // opposed to what it has not (unknown) or what is solid (occupied). Gated on
+    // a subscriber because the boxSearch is the expensive part and nothing in
+    // the pipeline consumes this -- it is purely for looking at.
+    // boxSearch CANNOT serve this: it throws outright on KNOWN_FREE
+    // (prob_map.cpp, "Box search does not support KNOWN_FREE") because free is
+    // the default state and is not kept in a searchable list the way occupied,
+    // unknown and frontier are. So walk the box and test each cell instead --
+    // the same Vec3f-stepping pattern attachedToOccluder() uses, and the reason
+    // free_stride matters: it is applied to the WALK, not to the result, so a
+    // stride of 4 is 64x fewer isKnownFree() calls, not just fewer points.
+    if (pub_free_.getNumSubscribers() > 0) {
+      const double step = map_->getResolution() * std::max(1, free_stride_);
+      pcl::PointCloud<pcl::PointXYZ> free_cloud;
+      for (double x = box_min.x(); x <= box_max.x(); x += step) {
+        for (double y = box_min.y(); y <= box_max.y(); y += step) {
+          for (double z = box_min.z(); z <= box_max.z(); z += step) {
+            const Vec3f p(x, y, z);
+            if (map_->isKnownFree(p)) {
+              free_cloud.push_back(pcl::PointXYZ(static_cast<float>(x),
+                                                 static_cast<float>(y),
+                                                 static_cast<float>(z)));
+            }
+          }
+        }
+      }
+      publish(free_cloud, pub_free_);
+    }
+
     if (log_counter_++ % static_cast<int>(rate_ * 2) == 0) {
       // visible= is the diagnostic for this filter: a large count means the map
       // is full of surface pinholes (raise the scene's point density / lower
       // point_filt_num), a zero count with sightline_check on means it is not
       // firing at all.
       ROS_INFO("[occlusion_boundary] unknown=%zu  occlusion=%zu  open=%zu "
-               "(visible-rejected=%zu)",
+               "(visible-rejected=%zu buried-rejected=%zu)",
                unknown_pts.size(), occlusion_cloud.size(), open_cloud.size(),
-               n_visible);
+               n_visible, n_buried);
     }
   }
 
@@ -273,7 +368,8 @@ class OcclusionBoundaryExtractor {
   ros::NodeHandle nh_;
   rog_map::ROGMap::Ptr map_;
 
-  ros::Publisher pub_occlusion_, pub_open_;
+  ros::Publisher pub_occlusion_, pub_open_, pub_free_;
+  int free_stride_{4};
   ros::Subscriber sub_odom_;
   ros::Timer timer_;
 
@@ -289,6 +385,9 @@ class OcclusionBoundaryExtractor {
   bool sightline_check_{true};
   double sightline_max_range_{15.0};
   double sightline_skip_{0.0};
+  double min_frontier_z_{0.3};
+  bool bury_check_{true};
+  double bury_height_{1.0};
   int log_counter_{0};
 };
 

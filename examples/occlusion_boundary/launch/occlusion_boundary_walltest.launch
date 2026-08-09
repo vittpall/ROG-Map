@@ -23,21 +23,57 @@
          Consequence: run this INSTEAD of rog_map_example marsim_example.launch,
          never alongside it. Both create a ROGMap and both would claim the
          name, so the second launched kills the first. -->
+    <!-- Ground truth by default. Pass /Odometry_imu to close the loop on
+         FAST-LIO instead (needs wall_test.launch use_dynamics:=true). -->
+    <arg name="odom_topic" default="/lidar_slam/odom"/>
+    <!-- Correct in BOTH modes, which is why it is not conditional:
+         single_drone.xml remaps the renderer's ~cloud to /cloud_registered when
+         use_dynamics=false (perfect_drone), and to /quad_0/gt_cloud when it is
+         true, in which case FAST-LIO consumes that and publishes the
+         registered result to /cloud_registered itself. The renderer's own
+         /quad0_pcl_render_node/cloud is remapped away and never exists. -->
+    <arg name="cloud_topic" default="/cloud_registered"/>
+    <!-- Cost grows with the SQUARE of this (see the node comment below). 12.0
+         put ROG-Map behind real-time on this laptop ("Unfinished frame cnt")
+         and spiked the frontier to 10k+ voxels; 8.0 keeps both in budget. -->
+    <arg name="query_range" default="8.0"/>
+    <!-- Half-extent in z. The box is ego +/- this, so at cruise_z=1.0 a value of
+         2.5 searches z in [-1.5, 3.5] and the wall's real top edge at z=5 is
+         never enumerated, so what looks like a "top edge" in RViz is only
+         the top of the searched slab. 4.5 reaches z=5.5 from cruise altitude.
+         Cost is linear in this (the box is enumerated at map resolution), unlike
+         query_range which is quadratic, so it is the cheaper one to grow. -->
+    <arg name="query_range_z" default="2.5"/>
+    <!-- Publish the UNKNOWN voxels on rog_map/unk (and rog_map/inf_unk).
+         Off by default and worth keeping that way: unknown is by far the
+         largest class in the map (the logs show ~1.5M voxels), it is
+         re-enumerated with a boxSearch over the whole visualization range every
+         publish, and RViz will not draw that at interactive rates. Turn it on to
+         answer a specific question, then turn it off.
+         ROG-Map also gates the publish on there being a subscriber, so nothing
+         is computed until an RViz display actually exists. -->
+    <arg name="pub_unknown" default="false"/>
+
     <node name="rm_node" pkg="occlusion_boundary"
           type="occlusion_boundary_node" output="screen">
         <rosparam command="load"
                   file="$(find occlusion_boundary)/config/wall_test.yaml"/>
 
-        <param name="odom_topic" value="/lidar_slam/odom"/>
+        <!-- After the rosparam load, so these win over the values in the yaml. -->
+        <param name="rog_map/ros_callback/cloud_topic" value="$(arg cloud_topic)"/>
+        <param name="rog_map/ros_callback/odom_topic" value="$(arg odom_topic)"/>
+        <param name="rog_map/visualization/pub_unknown_map_en"
+               value="$(arg pub_unknown)"/>
+        <param name="odom_topic" value="$(arg odom_topic)"/>
         <param name="frame_id" value="world"/>
         <!-- Box half-extent enumerated at map resolution each tick, so cost grows
              with the SQUARE of this (z is fixed below). 8 -> 12 m is ~2.3x the
              voxels; expect the node to fall from ~4.5 Hz to ~2 Hz against the 5 Hz
              timer, which means the planner sees a staler frontier. -->
-        <param name="query_range" value="12.0"/>
+        <param name="query_range" value="$(arg query_range)"/>
         <!-- Left alone deliberately: the drone flies at fixed altitude, so z costs
              voxels without adding anything the 2D keep-out can use. -->
-        <param name="query_range_z" value="2.5"/>
+        <param name="query_range_z" value="$(arg query_range_z)"/>
         <param name="attach_radius_vox" value="2"/>
         <!-- Reject frontier voxels the drone can actually SEE. Without this,
              every wall voxel that never received a lidar return stays UNKNOWN,

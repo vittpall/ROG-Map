@@ -6,7 +6,12 @@
 
 rog_map:
   resolution: 0.1
-  inflation_resolution: 0.1
+  inflation_resolution: 0.2
+  # The halo around every occupied voxel is inflation_step * inflation_resolution.
+  # Keep that product at ~0.2 m: it closes the wall's hollow interior (0.2 m
+  # thick, so only the front voxel ever gets a return) without merging separate
+  # obstacles into each other. At 2 x 0.2 = 0.4 m a forest or random map turns
+  # into solid blobs.
   inflation_step: 1
   unk_inflation_en: false
   unk_inflation_step: 1

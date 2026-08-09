@@ -22,7 +22,7 @@
          (run it with the help flag to see the geometry options).
     -->
 
-    <arg name="use_gpu_" value="true"/>
+    <arg name="use_gpu_" value="false"/>
     <arg name="drone_num" value="1"/>
     <arg name="frame_id" value="world"/>
     <arg name="odom_topic" value="/lidar_slam/odom"/>
