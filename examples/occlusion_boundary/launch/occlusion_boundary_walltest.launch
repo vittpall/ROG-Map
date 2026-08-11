@@ -75,6 +75,36 @@
              voxels without adding anything the 2D keep-out can use. -->
         <param name="query_range_z" value="$(arg query_range_z)"/>
         <param name="attach_radius_vox" value="2"/>
+
+        <!-- Silhouette detector: an independent second opinion, published on its
+             own topics and sharing nothing with the frontier path above except
+             the ego pose and the query box. It bins OCCUPIED voxels by azimuth
+             and looks for range jumps, so pinholes (which are ABSENT voxels)
+             cannot take part at all.
+             ~silhouette_edges  the corner points, two per wall end
+             ~silhouette_gates  the shadow mouths, sampled at map resolution and
+                                shaped as a drop-in for ~occlusion_frontier -->
+        <param name="silhouette_en" value="true"/>
+        <!-- Floor is the angular size of a voxel at query_range: 0.1 m at 8 m is
+             ~0.72 deg. Finer than that buys phantom edges, not resolution, and
+             the node warns at startup if you go under. 1.0 keeps margin over
+             the floor, which matters because a distant surface seen obliquely
+             fills bins more sparsely than the head-on figure suggests. -->
+        <param name="silhouette_dtheta_deg" value="1.0"/>
+        <!-- Between the occluder's thickness (below it, surface roughness fires)
+             and the distance from the wall to whatever is behind it (above it,
+             nothing is detected at all). -->
+        <param name="silhouette_jump_thresh" value="0.8"/>
+        <!-- Keep equal to v_target * t_grow_max on the planner side (1.0 * 3.0
+             in occlusion_common.yaml): past that the keep-out has stopped
+             growing, so a deeper gate costs points for no added coverage. -->
+        <param name="silhouette_shadow_depth" value="3.0"/>
+        <!-- The planar assumption. Wide enough to catch the wall at cruise_z,
+             narrow enough to keep the FLOOR out of the profile: let the ground
+             in and every bin reads ~0 range and no jump is ever found. -->
+        <param name="silhouette_z_band" value="0.5"/>
+        <param name="silhouette_min_range" value="0.3"/>
+
         <param name="rate" value="5.0"/>
     </node>
 </launch>

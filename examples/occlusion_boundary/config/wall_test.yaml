@@ -5,8 +5,35 @@
 # The points [out of virtual ceil or ground] is considered to be [OCCUPIED]
 
 rog_map:
+  # 0.1. Coarsening to 0.15 was tried as a pinhole mitigation -- bigger cells are
+  # harder for a non-repetitive Livox rosette to miss -- and reverted: it cost
+  # boundary precision, dragged three other resolutions along with it, and the
+  # silhouette detector (occlusion_boundary_node.cpp) addresses pinholes at the
+  # source instead, by never looking at UNKNOWN voxels in the first place.
+  #
+  # THIS VALUE IS NOT LOCAL. Three other resolutions are checked against it or
+  # derived from it, and only the first fails loudly:
+  #   esdf.resolution below this      -> CounterMap THROWS at startup
+  #                                      ("prob_map_resolution should be smaller
+  #                                      than or equal to counter_map_resolution")
+  #   inflation_resolution not a
+  #   multiple of this                -> silently rounded (see below)
+  #   occ_resolution, over in
+  #   occlusion_mppi/config/occlusion_common.yaml
+  #                                   -> OccupancySet hashes the published voxels
+  #                                      at the WRONG pitch, so the collision test
+  #                                      fires on empty cells and misses the wall.
+  #                                      The ego then drives off in a direction
+  #                                      unrelated to the goal and NOTHING logs a
+  #                                      complaint. This one has already cost a
+  #                                      debugging session.
+  # Changing this means changing all four.
   resolution: 0.1
-  inflation_resolution: 0.2
+  # Must be an integer multiple of `resolution`. counter_map.cpp takes
+  # round(inflation_resolution / resolution) and then RECOMPUTES the real value
+  # as resolution * that ratio, so anything in between is not an error, it is
+  # just discarded -- 0.2 against a 0.15 grid silently became 0.15.
+  inflation_resolution: 0.1
   # The halo around every occupied voxel is inflation_step * inflation_resolution.
   # Keep that product at ~0.2 m: it closes the wall's hollow interior (0.2 m
   # thick, so only the front voxel ever gets a return) without merging separate
@@ -47,7 +74,10 @@ rog_map:
     threshold: 0.3
 
   esdf:
-    enable: true
+    enable: false
+    # Kept in step with `resolution` even while disabled: the CounterMap check
+    # that rejects a value below the prob map's runs at construction, so a stale
+    # 0.1 here kills the node the moment esdf.enable goes back to true.
     resolution: 0.1
     # The range of esdf around the odom [m].
     local_update_box: [ 5,5,3 ]
@@ -81,7 +111,7 @@ rog_map:
   #  e.g. if set to k, the point cloud will be downsampled to 1/k.
   # Sparse scene (one wall + ground) gives ~800 pts/frame; 1-in-15 starved
   # the map so no voxel ever accumulated enough hits to become OCCUPIED.
-  point_filt_num: 2
+  point_filt_num: 1
 
   # Probabilistc update
   raycasting:
