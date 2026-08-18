@@ -289,12 +289,13 @@ class OcclusionBoundaryExtractor {
     const double r_vox = 0.5 * std::sqrt(2.0) * map_->getResolution();  // XY circumradius
     std::vector<double> depth(n_bins, kNoDepth);
     for (const auto& p : occ_pts) {
-      // TODO: skip all the points at a certain heigth, disable this check for 3d occlusion detection
+      // skip all the points at a certain heigth, disable this check for 3d occlusion detection
       if (std::fabs(p.z() - ego.z()) > silhouette_z_band_) continue;
       const double dx = p.x() - ego.x();
       const double dy = p.y() - ego.y();
       const double r = std::hypot(dx, dy);
-      if (r < silhouette_min_range_ || r > query_range_) continue;
+
+      // if (r < silhouette_min_range_ || r > query_range_) continue;
 
       const double theta = std::atan2(dy, dx);
       const double half_ang = std::atan2(r_vox, r);
@@ -351,12 +352,12 @@ class OcclusionBoundaryExtractor {
       //   - a single missing voxel in the occupied set
       // Requiring the far side to persist costs nothing on a genuine corner,
       // whose shadow spans far more bins than this.
-      bool confirmed = true;
-      for (int k = 0; k < silhouette_min_run_bins_; ++k) {
-        const int idx = (((far_start + step * k) % n_bins) + n_bins) % n_bins;
-        if (!is_far(depth[idx], near_r)) { confirmed = false; break; }
-      }
-      if (!confirmed) continue;
+      // bool confirmed = true;
+      // for (int k = 0; k < silhouette_min_run_bins_; ++k) {
+      //   const int idx = (((far_start + step * k) % n_bins) + n_bins) % n_bins;
+      //   if (!is_far(depth[idx], near_r)) { confirmed = false; break; }
+      // }
+      // if (!confirmed) continue;
 
       // Azimuth of the BOUNDARY between the two bins, not either centre: the
       // edge lies on the transition, and using a bin centre biases every gate
@@ -372,12 +373,12 @@ class OcclusionBoundaryExtractor {
       // The gate runs radially AWAY from the ego, starting at the edge. Sampled
       // at map resolution so the downstream KD-tree sees the same point density
       // it gets from occlusion_frontier.
-      for (double s = 0.0; s <= silhouette_shadow_depth_; s += res) {
-        gate_cloud.push_back(pcl::PointXYZ(
-            static_cast<float>(edge.x() + s * ct),
-            static_cast<float>(edge.y() + s * st),
-            static_cast<float>(edge.z())));
-      }
+      // for (double s = 0.0; s <= silhouette_shadow_depth_; s += res) {
+      //   gate_cloud.push_back(pcl::PointXYZ(
+      //       static_cast<float>(edge.x() + s * ct),
+      //       static_cast<float>(edge.y() + s * st),
+      //       static_cast<float>(edge.z())));
+      // }
     }
 
     publish(edge_cloud, pub_sil_edges_);
