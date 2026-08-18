@@ -28,7 +28,9 @@
         <rosparam command="load"
                   file="$(find occlusion_boundary)/config/occlusion_boundary.yaml"/>
 
-        <param name="odom_topic" value="/lidar_slam/odom"/>
+        <!-- /lidar_slam/odom for marsim-->
+        <param name="odom_topic" value="/Odometry"/>
+        <!-- camera_init for marsim-->
         <param name="frame_id" value="world"/>
         <param name="query_range" value="8.0"/>
         <param name="query_range_z" value="2.5"/>

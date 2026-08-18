@@ -94,7 +94,7 @@
         <!-- Between the occluder's thickness (below it, surface roughness fires)
              and the distance from the wall to whatever is behind it (above it,
              nothing is detected at all). -->
-        <param name="silhouette_jump_thresh" value="0.8"/>
+        <param name="silhouette_jump_thresh" value="5.0"/>
         <!-- Keep equal to v_target * t_grow_max on the planner side (1.0 * 3.0
              in occlusion_common.yaml): past that the keep-out has stopped
              growing, so a deeper gate costs points for no added coverage. -->

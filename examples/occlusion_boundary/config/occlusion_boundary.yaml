@@ -41,7 +41,8 @@ rog_map:
   ros_callback:
     enable: true
     cloud_topic: "/cloud_registered"
-    odom_topic: "/lidar_slam/odom"
+    #odom_topic: "/lidar_slam/odom" #if marsim running
+    odom_topic: "/Odometry" #fast lio mapping
     odom_timeout: 2.0
 
 
@@ -55,7 +56,8 @@ rog_map:
     frame_rate: 0
     # visualization range along the odom [m].
     range: [ 50,50,6 ]
-    frame_id: "world"
+    # frame_id: "world" # for marsim
+    frame_id: "camera_init"
     pub_unknown_map_en: false
 
   # Intensity filter for input point cloud. If the point intensity is less than this value,
