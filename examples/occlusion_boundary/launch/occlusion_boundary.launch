@@ -25,7 +25,7 @@
          exceeds the near range by this much. Keep it above the occluder's own
          thickness (below that, surface roughness fires) and below the gap from
          the occluder to whatever is behind it (above that, nothing fires). -->
-    <arg name="jump_thresh" default="0.8"/>
+    <arg name="jump_thresh" default="5.0"/>
     <!-- Azimuth bin width. Floor is the angular size of a voxel at query_range
          (0.1 m at 8 m is ~0.72 deg); finer buys phantom edges, and the node
          warns at startup if you go under. -->
