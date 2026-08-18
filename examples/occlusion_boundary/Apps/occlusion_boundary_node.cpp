@@ -289,6 +289,7 @@ class OcclusionBoundaryExtractor {
     const double r_vox = 0.5 * std::sqrt(2.0) * map_->getResolution();  // XY circumradius
     std::vector<double> depth(n_bins, kNoDepth);
     for (const auto& p : occ_pts) {
+      // TODO: skip all the points at a certain heigth, disable this check for 3d occlusion detection
       if (std::fabs(p.z() - ego.z()) > silhouette_z_band_) continue;
       const double dx = p.x() - ego.x();
       const double dy = p.y() - ego.y();

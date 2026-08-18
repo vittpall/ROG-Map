@@ -15,6 +15,33 @@
          obstacles, attach_radius_vox is too small. If everything lands in
          occlusion_frontier, it is too large. -->
 
+    <!-- Range-jump tuning for the silhouette detector. Overridable from the
+         command line, e.g.
+           roslaunch occlusion_boundary occlusion_boundary.launch jump_thresh:=1.2
+         The node reads these once at construction, so a change needs a
+         relaunch; rosparam set on the running node does nothing. -->
+    <!-- The threshold itself: adjacent azimuth bins whose ranges differ by less
+         than this are not an edge, and a bin counts as "behind" only once it
+         exceeds the near range by this much. Keep it above the occluder's own
+         thickness (below that, surface roughness fires) and below the gap from
+         the occluder to whatever is behind it (above that, nothing fires). -->
+    <arg name="jump_thresh" default="0.8"/>
+    <!-- Azimuth bin width. Floor is the angular size of a voxel at query_range
+         (0.1 m at 8 m is ~0.72 deg); finer buys phantom edges, and the node
+         warns at startup if you go under. -->
+    <arg name="dtheta_deg" default="1.0"/>
+    <!-- Consecutive bins that must stay past the jump before an edge is
+         accepted. Raise it to reject one-bin dropouts. -->
+    <arg name="min_run_bins" default="3"/>
+    <!-- The planar assumption: half-height of the z slab the profile is built
+         from. Wide enough to catch the wall at cruise altitude, narrow enough
+         to exclude the FLOOR - let the ground in and every bin reads ~0 range
+         and no jump is ever found. -->
+    <arg name="z_band" default="0.5"/>
+    <!-- How deep the shadow gates are sampled. Match v_target * t_grow_max on
+         the planner side; past that the keep-out has stopped growing. -->
+    <arg name="shadow_depth" default="3.0"/>
+
     <!-- Node is deliberately named rm_node, NOT occlusion_boundary_node.
          viz_default.rviz hardcodes every ROG-Map display to the /rm_node/...
          namespace (map_bound, occ, unk, frontier, esdf). Naming it anything
@@ -35,6 +62,18 @@
         <param name="query_range" value="8.0"/>
         <param name="query_range_z" value="2.5"/>
         <param name="attach_radius_vox" value="2"/>
+
+        <!-- Silhouette detector: an independent second opinion on the frontier
+             path, published on ~silhouette_edges and ~silhouette_gates. It bins
+             OCCUPIED voxels by azimuth and looks for range jumps. -->
+        <param name="silhouette_en" value="true"/>
+        <param name="silhouette_jump_thresh" value="$(arg jump_thresh)"/>
+        <param name="silhouette_dtheta_deg" value="$(arg dtheta_deg)"/>
+        <param name="silhouette_min_run_bins" value="$(arg min_run_bins)"/>
+        <param name="silhouette_z_band" value="$(arg z_band)"/>
+        <param name="silhouette_shadow_depth" value="$(arg shadow_depth)"/>
+        <param name="silhouette_min_range" value="0.3"/>
+
         <param name="rate" value="5.0"/>
     </node>
 </launch>
