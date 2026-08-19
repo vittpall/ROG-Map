@@ -77,7 +77,7 @@ rog_map:
     batch_update_size: 1
     local_update_box: [ 50,50,5 ]
     # The range of raycasting [m].
-    ray_range: [ 0.0, 5 ]
+    ray_range: [ 0.0, 15 ]
 
     p_min: 0.12
     p_miss: 0.49

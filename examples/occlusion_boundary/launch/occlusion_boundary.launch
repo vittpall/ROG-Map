@@ -37,7 +37,7 @@
          from. Wide enough to catch the wall at cruise altitude, narrow enough
          to exclude the FLOOR - let the ground in and every bin reads ~0 range
          and no jump is ever found. -->
-    <arg name="z_band" default="0.3"/>
+    <arg name="z_band" default="0.05"/>
     <!-- How deep the shadow gates are sampled. Match v_target * t_grow_max on
          the planner side; past that the keep-out has stopped growing. -->
     <arg name="shadow_depth" default="3.0"/>
