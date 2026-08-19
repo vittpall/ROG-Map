@@ -33,11 +33,18 @@
     <!-- Consecutive bins that must stay past the jump before an edge is
          accepted. Raise it to reject one-bin dropouts. -->
     <arg name="min_run_bins" default="3"/>
-    <!-- The planar assumption: half-height of the z slab the profile is built
-         from. Wide enough to catch the wall at cruise altitude, narrow enough
-         to exclude the FLOOR - let the ground in and every bin reads ~0 range
-         and no jump is ever found. -->
-    <arg name="z_band" default="0.05"/>
+    <!-- Elevation extent of the spherical profile [deg]. This is the SENSOR's
+         vertical FOV, not the volume of interest: bins outside the FOV hold no
+         return, and a no-return bin beside a surface is indistinguishable from
+         a silhouette against open space. Too wide and you get a ring of
+         phantom edges at the FOV limit. -->
+    <arg name="elev_min_deg" default="-15.0"/>
+    <arg name="elev_max_deg" default="15.0"/>
+    <!-- Elevation bin width. Keep equal to dtheta_deg for square bins. -->
+    <arg name="dphi_deg" default="1.0"/>
+    <!-- Emit edges where one side has no return at all. Off by default because
+         in 3D "no return" also means "never observed". -->
+    <arg name="open_edges" default="false"/>
     <!-- How deep the shadow gates are sampled. Match v_target * t_grow_max on
          the planner side; past that the keep-out has stopped growing. -->
     <arg name="shadow_depth" default="3.0"/>
@@ -60,17 +67,26 @@
         <!-- camera_init for marsim-->
         <param name="frame_id" value="world"/>
         <param name="query_range" value="8.0"/>
-        <param name="query_range_z" value="2.5"/>
+        <!-- The silhouette profile can only see what the box holds, so a slab
+             here caps the usable elevation regardless of elev_min/max_deg:
+             +/-2.5 m at 8 m is only ~17 deg. Raise it with the FOV, and note
+             the local map in occlusion_boundary.yaml must be at least this
+             tall or most of the query lands outside the map. -->
+        <param name="query_range_z" value="4.0"/>
         <param name="attach_radius_vox" value="2"/>
 
         <!-- Silhouette detector: an independent second opinion on the frontier
              path, published on ~silhouette_edges and ~silhouette_gates. It bins
-             OCCUPIED voxels by azimuth and looks for range jumps. -->
+             OCCUPIED voxels by azimuth AND elevation and looks for slant-range
+             jumps across either axis. -->
         <param name="silhouette_en" value="true"/>
         <param name="silhouette_jump_thresh" value="$(arg jump_thresh)"/>
         <param name="silhouette_dtheta_deg" value="$(arg dtheta_deg)"/>
         <param name="silhouette_min_run_bins" value="$(arg min_run_bins)"/>
-        <param name="silhouette_z_band" value="$(arg z_band)"/>
+        <param name="silhouette_elev_min_deg" value="$(arg elev_min_deg)"/>
+        <param name="silhouette_elev_max_deg" value="$(arg elev_max_deg)"/>
+        <param name="silhouette_dphi_deg" value="$(arg dphi_deg)"/>
+        <param name="silhouette_open_edges" value="$(arg open_edges)"/>
         <param name="silhouette_shadow_depth" value="$(arg shadow_depth)"/>
         <param name="silhouette_min_range" value="0.3"/>
 
