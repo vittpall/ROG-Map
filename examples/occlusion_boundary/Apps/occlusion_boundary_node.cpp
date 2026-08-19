@@ -287,12 +287,16 @@ class OcclusionBoundaryExtractor {
       // The gate runs radially AWAY from the ego, starting at the edge. Sampled
       // at map resolution so the downstream KD-tree sees the same point density
       // it gets from occlusion_frontier.
-      // for (double s = 0.0; s <= silhouette_shadow_depth_; s += res) {
-      //   gate_cloud.push_back(pcl::PointXYZ(
-      //       static_cast<float>(edge.x() + s * ct),
-      //       static_cast<float>(edge.y() + s * st),
-      //       static_cast<float>(edge.z())));
-      // }
+      //
+      // Flat by construction: z is pinned to the edge's, which is the ego's.
+      // That is the planar assumption showing through -- compare the 3d path,
+      // where the ray follows the full direction vector and tilts.
+      for (double s = 0.0; s <= silhouette_shadow_depth_; s += res) {
+        gate_cloud.push_back(pcl::PointXYZ(
+            static_cast<float>(edge.x() + s * ct),
+            static_cast<float>(edge.y() + s * st),
+            static_cast<float>(edge.z())));
+      }
     }
 
     publish(edge_cloud, pub_sil_edges_);
