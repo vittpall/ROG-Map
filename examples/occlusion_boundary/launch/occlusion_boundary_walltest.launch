@@ -99,16 +99,23 @@
              in occlusion_common.yaml): past that the keep-out has stopped
              growing, so a deeper gate costs points for no added coverage. -->
         <param name="silhouette_shadow_depth" value="3.0"/>
-        <!-- Elevation extent of the spherical profile. The wall scene has no
+        <!-- false = the original planar sweep (vertical edges only, all emitted
+             at the ego's altitude, tuned by z_band); true = the spherical
+             az x el profile (also finds wall tops and overhangs, points at
+             their true height, ~n_el times the cloud). The parameter family for
+             the mode you did not pick is silently ignored. -->
+        <param name="silhouette_3d" value="true"/>
+        <!-- 2d ONLY. Wide enough to catch the wall at cruise_z, narrow enough to
+             keep the FLOOR out of the profile: let the ground in and every bin
+             reads ~0 range and no jump is ever found. -->
+        <param name="silhouette_z_band" value="0.5"/>
+        <!-- 3d ONLY. Elevation extent of the spherical profile. The wall scene has no
              floor, so a band around the horizon is enough here and keeps the
              bin count (and the edge count you have to eyeball) small. Widen it
              to the sensor's real vertical FOV on a live map. -->
         <param name="silhouette_elev_min_deg" value="-10.0"/>
         <param name="silhouette_elev_max_deg" value="10.0"/>
         <param name="silhouette_dphi_deg" value="1.0"/>
-        <!-- Off: the wall scene is surrounded by empty space, so every bin past
-             the wall has no return and this would fire on all of them. -->
-        <param name="silhouette_open_edges" value="false"/>
         <param name="silhouette_min_range" value="0.3"/>
 
         <param name="rate" value="5.0"/>

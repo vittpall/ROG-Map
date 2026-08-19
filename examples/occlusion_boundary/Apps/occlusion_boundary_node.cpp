@@ -48,6 +48,19 @@ class OcclusionBoundaryExtractor {
 
     // ---- Silhouette detector (parallel path, see header) --------------------
     nh_.param<bool>("silhouette_en", silhouette_en_, true);
+    // Which detector runs. The two are NOT interchangeable in their parameters:
+    // 2d reads silhouette_z_band and ignores the elevation settings, 3d reads
+    // the elevation settings and ignores z_band. Setting the wrong family for
+    // the selected mode is silent -- the values are simply never looked at.
+    //
+    //   false -> publishSilhouette_2d: the original planar sweep. Folds a z
+    //            slab into one azimuth profile, so it finds only VERTICAL
+    //            silhouette edges and emits them all at the ego's altitude.
+    //            Kept because it is the cheap, known-good reference.
+    //   true  -> publishSilhouette_3d: spherical az x el profile. Finds
+    //            horizontal edges too (wall tops, overhangs) and emits points at
+    //            their true height, at roughly n_el times the cloud size.
+    nh_.param<bool>("silhouette_3d", silhouette_3d_, true);
     // Azimuth bin width [deg]. There is a hard floor here: a voxel must span at
     // least one bin at the far end of query_range or the profile fragments into
     // empty bins and every gap reads as two spurious edges. At 0.15 m and 8 m a
@@ -62,9 +75,15 @@ class OcclusionBoundaryExtractor {
     // must cross. Match v_target * t_grow_max on the planner side (1.0 * 3.0),
     // since beyond that the keep-out has stopped growing anyway.
     nh_.param<double>("silhouette_shadow_depth", silhouette_shadow_depth_, 3.0);
-    // Elevation binning. These REPLACE the old silhouette_z_band slab: the
-    // profile is spherical now, so instead of folding a horizontal band of
-    // voxels into one polar sweep it bins them by elevation as well.
+    // 2d ONLY. Half-height of the slab of occupied voxels folded into the polar
+    // profile [m]. This is the planar assumption: with lock_altitude the ego
+    // stays at cruise_z and only obstacles near that altitude can occlude it.
+    // Too wide and the floor enters every bin, pinning depth to ~0 everywhere.
+    // Ignored entirely when silhouette_3d is true.
+    nh_.param<double>("silhouette_z_band", silhouette_z_band_, 0.5);
+    // 3d ONLY. Elevation binning: what the 3d path uses INSTEAD of the z_band
+    // slab above. The profile is spherical, so rather than folding a horizontal
+    // band of voxels into one polar sweep it bins them by elevation as well.
     //
     // The bounds must match the SENSOR's vertical FOV, not the volume you care
     // about. Bins outside the FOV are empty because nothing was ever measured
@@ -77,11 +96,6 @@ class OcclusionBoundaryExtractor {
     // equal to dtheta gives square bins, which is what the run-length check
     // assumes when it walks either axis with one threshold.
     nh_.param<double>("silhouette_dphi_deg", silhouette_dphi_deg_, 1.0);
-    // Emit edges where one side has no return at all. In 2D this was the
-    // wall-END case and always correct; in 3D "no return" also means
-    // "unobserved", so it is off by default. Turn it on once the elevation
-    // bounds above are known to be right.
-    nh_.param<bool>("silhouette_open_edges", silhouette_open_edges_, false);
     // Occupied voxels closer than this are ignored [m]. Guards the atan2 from
     // near-zero ranges and stops the ego's own inflated footprint, if it ever
     // clips a voxel, from swamping every bin.
@@ -112,11 +126,20 @@ class OcclusionBoundaryExtractor {
     ROS_INFO("[occlusion_boundary] odom=%s query=%.1fm (z %.1fm) attach_radius=%d vox",
              odom_topic_.c_str(), query_range_, query_range_z_, attach_radius_vox_);
     if (silhouette_en_) {
-      ROS_INFO("[occlusion_boundary] silhouette 3d: dtheta=%.2f dphi=%.2f deg elev=[%.1f, %.1f] "
-               "deg jump=%.2f m depth=%.2f m open_edges=%d",
-               silhouette_dtheta_deg_, silhouette_dphi_deg_, silhouette_elev_min_deg_,
-               silhouette_elev_max_deg_, silhouette_jump_thresh_, silhouette_shadow_depth_,
-               static_cast<int>(silhouette_open_edges_));
+      // Print only the parameters the SELECTED mode actually reads. The other
+      // family is inert, and logging it invites tuning a value that is never
+      // looked at -- the exact debugging trail this switch would otherwise add.
+      if (silhouette_3d_) {
+        ROS_INFO("[occlusion_boundary] silhouette 3d: dtheta=%.2f dphi=%.2f deg "
+                 "elev=[%.1f, %.1f] deg jump=%.2f m depth=%.2f m",
+                 silhouette_dtheta_deg_, silhouette_dphi_deg_, silhouette_elev_min_deg_,
+                 silhouette_elev_max_deg_, silhouette_jump_thresh_, silhouette_shadow_depth_);
+      } else {
+        ROS_INFO("[occlusion_boundary] silhouette 2d: dtheta=%.2f deg jump=%.2f m "
+                 "depth=%.2f m z_band=%.2f m",
+                 silhouette_dtheta_deg_, silhouette_jump_thresh_,
+                 silhouette_shadow_depth_, silhouette_z_band_);
+      }
       // NOTE the old warning here checked whether a voxel subtends a bin at
       // MAX range. That was the wrong end: angular splatting makes the profile
       // continuous at every range, and the failure it was meant to catch (a
@@ -167,6 +190,116 @@ class OcclusionBoundaryExtractor {
     return false;
   }
 
+  void publishSilhouette_2d(const Vec3f& ego, const Vec3f& box_min, const Vec3f& box_max) {
+    constexpr double kNoDepth = std::numeric_limits<double>::infinity();
+
+    const int n_bins = std::max(
+        8, static_cast<int>(std::lround(360.0 / std::max(0.05, silhouette_dtheta_deg_))));
+    const double dtheta = 2.0 * M_PI / n_bins;
+
+    rog_map::vec_E<Vec3f> occ_pts;
+    map_->boxSearch(box_min, box_max, GridType::OCCUPIED, occ_pts);
+
+    const double r_vox = 0.5 * std::sqrt(2.0) * map_->getResolution();  // XY circumradius
+    std::vector<double> depth(n_bins, kNoDepth);
+    for (const auto& p : occ_pts) {
+      // skip all the points at a certain heigth, disable this check for 3d occlusion detection
+      if (std::fabs(p.z() - ego.z()) > silhouette_z_band_) continue;
+      const double dx = p.x() - ego.x();
+      const double dy = p.y() - ego.y();
+      const double r = std::hypot(dx, dy);
+
+      // if (r < silhouette_min_range_ || r > query_range_) continue;
+
+      const double theta = std::atan2(dy, dx);
+      const double half_ang = std::atan2(r_vox, r);
+      const int b0 = static_cast<int>(std::floor((theta - half_ang + M_PI) / dtheta));
+      const int b1 = static_cast<int>(std::floor((theta + half_ang + M_PI) / dtheta));
+      // b1 - b0 is bounded by the half-angle, which is bounded by
+      // silhouette_min_range: the loop cannot run away even for a voxel the ego
+      // is sitting on top of.
+      for (int b = b0; b <= b1; ++b) {
+        const int bw = ((b % n_bins) + n_bins) % n_bins;   // wrap, negatives included
+        depth[bw] = std::min(depth[bw], r);
+      }
+    }
+
+    // ---- 2 & 3. discontinuities -> edges -> gates --------------------------
+    const double res = map_->getResolution();
+    pcl::PointCloud<pcl::PointXYZ> edge_cloud, gate_cloud;
+
+    // A bin is "far" relative to a near surface if it holds nothing at all or
+    // sits at least a jump behind it. Shared by the transition test and the
+    // run-length confirmation below so the two cannot drift apart.
+    const auto is_far = [&](double d, double near_r) {
+      return !std::isfinite(d) || (d - near_r) > silhouette_jump_thresh_;
+    };
+
+    for (int i = 0; i < n_bins; ++i) {
+      const int j = (i + 1) % n_bins;
+      const double a = depth[i], b = depth[j];
+      if (!std::isfinite(a) && !std::isfinite(b)) continue;   // open sky both sides
+
+      double near_r;
+      bool far_is_forward;   // is the shadow on the j side of the transition?
+      if (!std::isfinite(a) || !std::isfinite(b)) {
+        // Surface on one side, nothing at all on the other: a silhouette
+        // against open space, which is the wall-END case in the wall test.
+        near_r = std::isfinite(a) ? a : b;
+        far_is_forward = std::isfinite(a);
+      } else {
+        if (std::fabs(a - b) < silhouette_jump_thresh_) continue;
+        near_r = std::min(a, b);
+        far_is_forward = (a < b);
+      }
+      // Walk outward from the FIRST far bin, which is j going forward but i
+      // going backward -- starting at j either way would test the near bin
+      // itself and reject every backward-facing edge.
+      const int step = far_is_forward ? +1 : -1;
+      const int far_start = far_is_forward ? j : i;
+
+      // Run-length confirmation. A real shadow keeps its far side far for many
+      // bins; a one-bin spike does not. Two things produce those spikes and
+      // both are worst exactly where the ego is closest to the wall:
+      //   - grazing incidence, where dr/dtheta along a continuous oblique
+      //     surface legitimately exceeds jump_thresh
+      //   - a single missing voxel in the occupied set
+      // Requiring the far side to persist costs nothing on a genuine corner,
+      // whose shadow spans far more bins than this.
+      // bool confirmed = true;
+      // for (int k = 0; k < silhouette_min_run_bins_; ++k) {
+      //   const int idx = (((far_start + step * k) % n_bins) + n_bins) % n_bins;
+      //   if (!is_far(depth[idx], near_r)) { confirmed = false; break; }
+      // }
+      // if (!confirmed) continue;
+
+      // Azimuth of the BOUNDARY between the two bins, not either centre: the
+      // edge lies on the transition, and using a bin centre biases every gate
+      // half a bin to one side, which at 8 m is ~7 cm of systematic error.
+      const double theta = (i + 1) * dtheta - M_PI;
+      const double ct = std::cos(theta), st = std::sin(theta);
+
+      const Vec3f edge(ego.x() + near_r * ct, ego.y() + near_r * st, ego.z());
+      edge_cloud.push_back(pcl::PointXYZ(static_cast<float>(edge.x()),
+                                         static_cast<float>(edge.y()),
+                                         static_cast<float>(edge.z())));
+
+      // The gate runs radially AWAY from the ego, starting at the edge. Sampled
+      // at map resolution so the downstream KD-tree sees the same point density
+      // it gets from occlusion_frontier.
+      // for (double s = 0.0; s <= silhouette_shadow_depth_; s += res) {
+      //   gate_cloud.push_back(pcl::PointXYZ(
+      //       static_cast<float>(edge.x() + s * ct),
+      //       static_cast<float>(edge.y() + s * st),
+      //       static_cast<float>(edge.z())));
+      // }
+    }
+
+    publish(edge_cloud, pub_sil_edges_);
+    publish(gate_cloud, pub_sil_gates_);
+    last_sil_edges_ = edge_cloud.size();
+  }
+
   /* Silhouette + shadow-volume extraction. See the header for why this exists
    * alongside the frontier path rather than replacing it.
    *
@@ -183,7 +316,7 @@ class OcclusionBoundaryExtractor {
    * The occupied set is far smaller than the unknown set the frontier path
    * enumerates, so this is the CHEAPER of the two detectors despite being the
    * more robust one. */
-  void publishSilhouette(const Vec3f& ego, const Vec3f& box_min, const Vec3f& box_max) {
+  void publishSilhouette_3d(const Vec3f& ego, const Vec3f& box_min, const Vec3f& box_max) {
     constexpr double kNoDepth = std::numeric_limits<double>::infinity();
 
     const int n_az = std::max(
@@ -295,12 +428,14 @@ class OcclusionBoundaryExtractor {
           double near_r;
           bool far_is_forward;   // is the shadow on the j side of the transition?
           if (!std::isfinite(a) || !std::isfinite(b)) {
-            // Surface on one side, no return on the other. In 2D this was the
-            // wall-END case and was always worth emitting. In 3D "no return"
-            // conflates open space with unobserved space, so it is opt-in:
-            // leave silhouette_open_edges false until the FOV bounds above are
-            // known to match the sensor.
-            if (!silhouette_open_edges_) continue;
+            // Surface on one side, no return on the other: a silhouette against
+            // open space, which is the wall-END case in the wall test and the
+            // only case a scene with a single obstacle can produce at all -- a
+            // two-sided jump needs two surfaces, and a lone wall with nothing
+            // behind it never gives one. Always emitted; the guard against an
+            // empty bin meaning "outside the sensor's vertical FOV" rather than
+            // "open space" is the elevation range, which simply never allocates
+            // an out-of-FOV bin to fire on.
             near_r = std::isfinite(a) ? a : b;
             far_is_forward = std::isfinite(a);
           } else {
@@ -349,12 +484,20 @@ class OcclusionBoundaryExtractor {
           // along the full 3D direction now, not the flattened one. Sampled at
           // map resolution so the downstream KD-tree sees the same point
           // density it gets from occlusion_frontier.
-          // for (double s = 0.0; s <= silhouette_shadow_depth_; s += res) {
-          //   const Vec3f g = edge + s * dir;
-          //   gate_cloud.push_back(pcl::PointXYZ(static_cast<float>(g.x()),
-          //                                      static_cast<float>(g.y()),
-          //                                      static_cast<float>(g.z())));
-          // }
+          //
+          // This is the line-of-sight ray, and it is what makes the output
+          // usable rather than decorative: the edge point alone says "an
+          // occluder stops here", the gate says "and this is the surface a
+          // hidden agent has to cross". In 3D it is also by far the bigger
+          // cloud -- one ray per edge, and there are now an elevation row's
+          // worth of edges where 2D had one. Watch shadow_depth: the point
+          // count is edges * depth / res.
+          for (double s = 0.0; s <= silhouette_shadow_depth_; s += res) {
+            const Vec3f g = edge + s * dir;
+            gate_cloud.push_back(pcl::PointXYZ(static_cast<float>(g.x()),
+                                               static_cast<float>(g.y()),
+                                               static_cast<float>(g.z())));
+          }
         }
       }
     }
@@ -402,7 +545,13 @@ class OcclusionBoundaryExtractor {
 
     // Parallel path, deliberately after the frontier publish and sharing only
     // the ego pose and the query box with it.
-    if (silhouette_en_) publishSilhouette(ego, box_min, box_max);
+    if (silhouette_en_) {
+      if (silhouette_3d_) {
+        publishSilhouette_3d(ego, box_min, box_max);
+      } else {
+        publishSilhouette_2d(ego, box_min, box_max);
+      }
+    }
 
     // Observed free space in the same box: what the ego has actually SEEN, as
     // opposed to what it has not (unknown) or what is solid (occupied). Gated on
@@ -476,10 +625,11 @@ class OcclusionBoundaryExtractor {
   double silhouette_dtheta_deg_{1.0};
   double silhouette_jump_thresh_{0.8};
   double silhouette_shadow_depth_{3.0};
+  bool silhouette_3d_{true};
+  double silhouette_z_band_{0.5};
   double silhouette_elev_min_deg_{-15.0};
   double silhouette_elev_max_deg_{15.0};
   double silhouette_dphi_deg_{1.0};
-  bool silhouette_open_edges_{false};
   double silhouette_min_range_{0.3};
   int silhouette_min_run_bins_{3};
   size_t last_sil_edges_{0};
