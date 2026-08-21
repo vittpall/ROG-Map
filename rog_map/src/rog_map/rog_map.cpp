@@ -108,7 +108,12 @@ ROGMap::ROGMap(const ros::NodeHandle& nh) :nh_(nh) {
         Pose cur_pose;
         cur_pose.first = Vec3f(0, 0, 0);
         updateOccPointCloud(*pcd_map);
-        esdf_map_->updateESDF3D(robot_state_.p);
+        // esdf_map_ is only allocated when esdf_en (prob_map.cpp), and every
+        // other call site is guarded the same way. Unguarded here, esdf_en:false
+        // + load_pcd_en:true is a null deref before the node ever spins.
+        if (cfg_.esdf_en) {
+            esdf_map_->updateESDF3D(robot_state_.p);
+        }
         cout << BLUE << " -- [ROGMap]Load pcd file success with " << pcd_map->size() << " pts." << RESET << endl;
         map_empty_ = false;
     }

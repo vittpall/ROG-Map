@@ -44,7 +44,7 @@
                   elev_min_deg/elev_max_deg/dphi_deg below.
          The two parameter families are mutually inert: the ones belonging to
          the mode you did NOT select are never read, silently. -->
-    <arg name="silhouette_3d" default="true"/>
+    <arg name="silhouette_3d" default="false"/>
     <!-- 2d ONLY. Half-height of the z slab the planar profile is built from.
          Wide enough to catch the wall at cruise altitude, narrow enough to
          exclude the FLOOR - let the ground in and every bin reads ~0 range and
@@ -77,7 +77,7 @@
                   file="$(find occlusion_boundary)/config/occlusion_boundary.yaml"/>
 
         <!-- /lidar_slam/odom for marsim-->
-        <param name="odom_topic" value="/Odometry"/>
+        <param name="odom_topic" value="/Odometry_imu"/>
         <!-- camera_init for marsim-->
         <param name="frame_id" value="world"/>
         <param name="query_range" value="8.0"/>

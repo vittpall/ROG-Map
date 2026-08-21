@@ -11,8 +11,10 @@ rog_map:
   unk_inflation_en: false
   unk_inflation_step: 1
   map_size: [ 50,50,6 ]
+  #map_size: [40, 20, 6]
+  fix_map_origin: [0,0,1.5]
   # If the map rolling is disable, the map origin [m] should be set.
-  fix_map_origin: [ 0,0,0 ]
+  #fix_map_origin: [ 0,0,0 ]
   frontier_extraction_en: true
 
   # Virtual ceil and ground
@@ -22,8 +24,15 @@ rog_map:
   block_inf_pt: false
   kd_tree_en: false
 
-  load_pcd_en: false
-#  pcd_name: "/home/yunfan/Workspace/rog_ws/src/ROG-Map/examples/rog_map_example/PCD/small_forest_002.pcd"
+  load_pcd_en: true
+  # scans.pcd is the RAW FAST-LIO map: 8.7M points spanning x -7.5..60.5, y -14..2.
+  # ROG-Map's pcd loader does not bounds-check, so any point outside map_size is an
+  # out-of-bounds write -> SIGSEGV at startup. lab_map.pcd is that cloud cropped to
+  # the dense lab region, voxel-downsampled to 0.1 m (84874 pts), and shifted by
+  # (-2, +4, 0) so the hiperlab Simulator's hardcoded (0,0,0) spawn lands in free
+  # space. Regenerate it if map_size or the spawn changes.
+  #pcd_name: "/home/vittorio/rog_ws/runs/lab_map.pcd"
+  pcd_name: "/home/vittorio/rog_ws/src/ROG-Map/examples/occlusion_boundary/pcd/wall_scene.pcd"
 
   map_sliding:
     enable: true
@@ -31,7 +40,11 @@ rog_map:
     threshold: 0.3
 
   esdf:
-    enable: false
+    # MUST be true whenever load_pcd_en is true: ROGMap's constructor calls
+    # esdf_map_->updateESDF3D() unconditionally in the load_pcd branch
+    # (rog_map.cpp:111), but esdf_map_ is only allocated when this is enabled.
+    # false + load_pcd_en -> null deref -> SIGSEGV before the node ever spins.
+    enable: true
     resolution: 0.1
     # The range of esdf around the odom [m].
     local_update_box: [ 5,5,3 ]
@@ -42,7 +55,9 @@ rog_map:
     enable: true
     cloud_topic: "/cloud_registered"
     #odom_topic: "/lidar_slam/odom" #if marsim running
-    odom_topic: "/Odometry" #fast lio mapping
+    
+    #odom_topic: "/Odometry" #fast lio mapping
+    odom_topic: "/Odometry_imu" #hiperlab simulator
     odom_timeout: 2.0
 
 
