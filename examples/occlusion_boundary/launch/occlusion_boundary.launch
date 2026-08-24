@@ -25,7 +25,7 @@
          exceeds the near range by this much. Keep it above the occluder's own
          thickness (below that, surface roughness fires) and below the gap from
          the occluder to whatever is behind it (above that, nothing fires). -->
-    <arg name="jump_thresh" default="1.0"/>
+    <arg name="jump_thresh" default="2.0"/>
     <!-- Azimuth bin width. Floor is the angular size of a voxel at query_range
          (0.1 m at 8 m is ~0.72 deg); finer buys phantom edges, and the node
          warns at startup if you go under. -->
@@ -49,7 +49,7 @@
          Wide enough to catch the wall at cruise altitude, narrow enough to
          exclude the FLOOR - let the ground in and every bin reads ~0 range and
          no jump is ever found. Ignored when silhouette_3d is true. -->
-    <arg name="z_band" default="0.05"/>
+    <arg name="z_band" default="1.0"/>
     <!-- 3d ONLY. Elevation extent of the spherical profile [deg]. The SENSOR's
          vertical FOV, not the volume of interest: bins outside the FOV hold no
          return, and a no-return bin beside a surface is indistinguishable from

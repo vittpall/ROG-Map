@@ -6,9 +6,9 @@
 
 rog_map:
   resolution: 0.1
-  inflation_resolution: 0.2
+  inflation_resolution: 0.1
   inflation_step: 1
-  unk_inflation_en: false
+  unk_inflation_en: true
   unk_inflation_step: 1
   map_size: [ 50,50,6 ]
   #map_size: [40, 20, 6]
@@ -31,8 +31,8 @@ rog_map:
   # the dense lab region, voxel-downsampled to 0.1 m (84874 pts), and shifted by
   # (-2, +4, 0) so the hiperlab Simulator's hardcoded (0,0,0) spawn lands in free
   # space. Regenerate it if map_size or the spawn changes.
-  #pcd_name: "/home/vittorio/rog_ws/runs/lab_map.pcd"
-  pcd_name: "/home/vittorio/rog_ws/src/ROG-Map/examples/occlusion_boundary/pcd/wall_scene.pcd"
+  pcd_name: "/home/vittorio/rog_ws/src/FAST_LIO/PCD/scans_lab_attached_wall.pcd"
+  #pcd_name: "/home/vittorio/rog_ws/src/ROG-Map/examples/occlusion_boundary/pcd/wall_scene.pcd"
 
   map_sliding:
     enable: true
@@ -73,7 +73,7 @@ rog_map:
     range: [ 50,50,6 ]
     # frame_id: "world" # for marsim
     frame_id: "camera_init"
-    pub_unknown_map_en: false
+    pub_unknown_map_en: true
 
   # Intensity filter for input point cloud. If the point intensity is less than this value,
   # it will be ignored (to avoid noise like dusk).

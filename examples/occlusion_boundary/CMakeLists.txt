@@ -18,10 +18,12 @@ find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 
 catkin_package(
+        INCLUDE_DIRS include
         CATKIN_DEPENDS roscpp rog_map sensor_msgs visualization_msgs
 )
 
 include_directories(
+        include
         ${catkin_INCLUDE_DIRS}
         ${EIGEN3_INCLUDE_DIR}
         ${PCL_INCLUDE_DIRS}
