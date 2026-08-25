@@ -17,9 +17,12 @@ rog_map:
   #fix_map_origin: [ 0,0,0 ]
   frontier_extraction_en: true
 
-  # Virtual ceil and ground
-  virtual_ceil_height: 9999
-  virtual_ground_height: -9999
+  # Virtual ceil and ground. Without a real ceiling the MPPI escapes upward:
+  # everything above the mapped slab (z > ~4.7) reads as free, so when low
+  # trajectories collide the optimizer flies over the top of the map. Close
+  # the box at the real lab bounds.
+  virtual_ceil_height: 10.0
+  virtual_ground_height: 0.0
 
   block_inf_pt: false
   kd_tree_en: false
