@@ -6,13 +6,13 @@
 
 rog_map:
   resolution: 0.1
-  inflation_resolution: 0.1
+  inflation_resolution: 0.2
   inflation_step: 1
-  unk_inflation_en: true
+  unk_inflation_en: false
   unk_inflation_step: 1
   map_size: [ 50,50,6 ]
   #map_size: [40, 20, 6]
-  fix_map_origin: [0,0,1.5]
+  fix_map_origin: [0,0,0]
   # If the map rolling is disable, the map origin [m] should be set.
   #fix_map_origin: [ 0,0,0 ]
   frontier_extraction_en: true
@@ -21,8 +21,8 @@ rog_map:
   # everything above the mapped slab (z > ~4.7) reads as free, so when low
   # trajectories collide the optimizer flies over the top of the map. Close
   # the box at the real lab bounds.
-  virtual_ceil_height: 10.0
-  virtual_ground_height: 0.0
+  virtual_ceil_height: 9999
+  virtual_ground_height: -9999
 
   block_inf_pt: false
   kd_tree_en: false
@@ -76,7 +76,7 @@ rog_map:
     range: [ 50,50,6 ]
     # frame_id: "world" # for marsim
     frame_id: "camera_init"
-    pub_unknown_map_en: true
+    pub_unknown_map_en: false
 
   # Intensity filter for input point cloud. If the point intensity is less than this value,
   # it will be ignored (to avoid noise like dusk).
@@ -95,7 +95,7 @@ rog_map:
     batch_update_size: 1
     local_update_box: [ 50,50,5 ]
     # The range of raycasting [m].
-    ray_range: [ 0.0, 15 ]
+    ray_range: [ 0.0, 5 ]
 
     p_min: 0.12
     p_miss: 0.49

@@ -108,6 +108,12 @@ class OcclusionBoundaryExtractor {
     // jump_thresh on its own -- worst precisely when the ego is close to a wall,
     // which is when the detector matters most.
     nh_.param<int>("silhouette_min_run_bins", silhouette_min_run_bins_, 3);
+    // Occupied voxels below this world-frame Z [m] never enter the silhouette
+    // profile (2d or 3d), before range/FOV filtering. For ground clutter that
+    // survived rog_map's virtual_ground_height cutoff (e.g. curbs, low debris,
+    // or scan noise sitting just above it) and is spuriously read as an
+    // occluder. Default is very low so nothing is filtered unless set.
+    nh_.param<double>("silhouette_min_z", silhouette_min_z_, -1e9);
 
     pub_occlusion_ = nh_.advertise<sensor_msgs::PointCloud2>("occlusion_frontier", 1);
     pub_open_ = nh_.advertise<sensor_msgs::PointCloud2>("open_frontier", 1);
@@ -133,14 +139,15 @@ class OcclusionBoundaryExtractor {
       // looked at -- the exact debugging trail this switch would otherwise add.
       if (silhouette_3d_) {
         ROS_INFO("[occlusion_boundary] silhouette 3d: dtheta=%.2f dphi=%.2f deg "
-                 "elev=[%.1f, %.1f] deg jump=%.2f m depth=%.2f m",
+                 "elev=[%.1f, %.1f] deg jump=%.2f m depth=%.2f m min_z=%.2f m",
                  silhouette_dtheta_deg_, silhouette_dphi_deg_, silhouette_elev_min_deg_,
-                 silhouette_elev_max_deg_, silhouette_jump_thresh_, silhouette_shadow_depth_);
+                 silhouette_elev_max_deg_, silhouette_jump_thresh_, silhouette_shadow_depth_,
+                 silhouette_min_z_);
       } else {
         ROS_INFO("[occlusion_boundary] silhouette 2d: dtheta=%.2f deg jump=%.2f m "
-                 "depth=%.2f m z_band=%.2f m",
+                 "depth=%.2f m z_band=%.2f m min_z=%.2f m",
                  silhouette_dtheta_deg_, silhouette_jump_thresh_,
-                 silhouette_shadow_depth_, silhouette_z_band_);
+                 silhouette_shadow_depth_, silhouette_z_band_, silhouette_min_z_);
       }
       // NOTE the old warning here checked whether a voxel subtends a bin at
       // MAX range. That was the wrong end: angular splatting makes the profile
@@ -205,6 +212,7 @@ class OcclusionBoundaryExtractor {
     const double r_vox = 0.5 * std::sqrt(2.0) * map_->getResolution();  // XY circumradius
     std::vector<double> depth(n_bins, kNoDepth);
     for (const auto& p : occ_pts) {
+      if (p.z() < silhouette_min_z_) continue;
       // skip all the points at a certain heigth, disable this check for 3d occlusion detection
       if (std::fabs(p.z() - ego.z()) > silhouette_z_band_) continue;
       const double dx = p.x() - ego.x();
@@ -356,6 +364,7 @@ class OcclusionBoundaryExtractor {
     };
 
     for (const auto& p : occ_pts) {
+      if (p.z() < silhouette_min_z_) continue;
       const double dx = p.x() - ego.x();
       const double dy = p.y() - ego.y();
       const double dz = p.z() - ego.z();
@@ -589,15 +598,32 @@ class OcclusionBoundaryExtractor {
     }
 
     if (log_counter_++ % static_cast<int>(rate_ * 2) == 0) {
-      // sil_edges is the headline number for the parallel detector: the wall
-      // test should show a small, STABLE count (two per wall end, a few more
-      // from the ground clutter). Hundreds means dtheta is too fine for the
-      // range or jump_thresh is below the surface roughness.
-      ROS_INFO("[occlusion_boundary] unknown=%zu  occlusion=%zu  open=%zu  sil_edges=%zu",
+      ROS_INFO("[occlusion_boundary] unknown=%zu  occlusion=%zu  open=%zu  "
+               "sil_edges=%zu  cost_min=%.3f  cost_max=%.3f  frac_collide=%.2f  "
+               "frac_cannot_stop=%.2f  frac_breached=%.2f",
                unknown_pts.size(), occlusion_cloud.size(), open_cloud.size(),
-               last_sil_edges_);
+               last_sil_edges_, planner_cost_min_, planner_cost_max_,
+               planner_frac_collide_, planner_frac_cannot_stop_,
+               planner_frac_breached_);
     }
   }
+
+ public:
+  void setPlannerStats(double cost_min, double cost_max, double frac_collide,
+                       double frac_cannot_stop, double frac_breached) {
+    planner_cost_min_ = cost_min;
+    planner_cost_max_ = cost_max;
+    planner_frac_collide_ = frac_collide;
+    planner_frac_cannot_stop_ = frac_cannot_stop;
+    planner_frac_breached_ = frac_breached;
+  }
+
+ private:
+  double planner_cost_min_{0.0};
+  double planner_cost_max_{0.0};
+  double planner_frac_collide_{0.0};
+  double planner_frac_cannot_stop_{0.0};
+  double planner_frac_breached_{0.0};
 
   void publish(const pcl::PointCloud<pcl::PointXYZ>& cloud,
                const ros::Publisher& pub) const {
@@ -638,6 +664,7 @@ class OcclusionBoundaryExtractor {
   double silhouette_dphi_deg_{1.0};
   double silhouette_min_range_{0.3};
   int silhouette_min_run_bins_{3};
+  double silhouette_min_z_{-1e9};
   size_t last_sil_edges_{0};
 
   int log_counter_{0};

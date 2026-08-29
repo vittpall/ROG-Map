@@ -26,16 +26,16 @@
 namespace rog_map {
 // Public Query Function ========================================================================
     bool InfMap::isOccupiedInflate(const Vec3f &pos) const {
-        if (!insideLocalMap(pos)) return true;
-        if (pos.z() > cfg_.virtual_ceil_height) return true;
-        if (pos.z() < cfg_.virtual_ground_height) return true;
+        if (!insideLocalMap(pos)) return false;
+        if (pos.z() > cfg_.virtual_ceil_height) return false;
+        if (pos.z() < cfg_.virtual_ground_height) return false;
         return imd_.occ_inflate_cnt[getHashIndexFromPos(pos)] > 0;
     }
 
     bool InfMap::isOccupiedInflate(const Vec3i &id_g) const {
-        if (!insideLocalMap(id_g)) return true;
-        if (id_g.z() > cfg_.virtual_ceil_height_id_g) return true;
-        if (id_g.z() < cfg_.virtual_ground_height_id_g) return true;
+        if (!insideLocalMap(id_g)) return false;
+        if (id_g.z() > cfg_.virtual_ceil_height_id_g) return false;
+        if (id_g.z() < cfg_.virtual_ground_height_id_g) return false;
         return imd_.occ_inflate_cnt[getHashIndexFromGlobalIndex(id_g)] > 0;
     }
 
