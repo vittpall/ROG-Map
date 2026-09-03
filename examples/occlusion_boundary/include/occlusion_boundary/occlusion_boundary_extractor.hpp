@@ -330,7 +330,7 @@ class OcclusionBoundaryExtractor {
    * The occupied set is far smaller than the unknown set the frontier path
    * enumerates, so this is the CHEAPER of the two detectors despite being the
    * more robust one. */
-  void publishSilhouette_3d(const Vec3f& ego, const Vec3f& box_min, const Vec3f& box_max) {
+  void publishSilhouette_3d(const Vec3f& ego) {
     constexpr double kNoDepth = std::numeric_limits<double>::infinity();
 
     const int n_az = std::max(
@@ -352,8 +352,10 @@ class OcclusionBoundaryExtractor {
     const int n_el = std::max(1, static_cast<int>(std::ceil((phi_max - phi_min) / dphi_req)));
     const double dphi = (phi_max - phi_min) / n_el;
 
+    const double r_search = query_range_ + std::max(1.0, silhouette_jump_thresh_);
+    const Vec3f sil_half(r_search, r_search, r_search);
     rog_map::vec_E<Vec3f> occ_pts;
-    map_->boxSearch(box_min, box_max, GridType::OCCUPIED, occ_pts);
+    map_->boxSearch(ego - sil_half, ego + sil_half, GridType::OCCUPIED, occ_pts);
 
     // Circumradius of the voxel in 3D, not the XY diagonal the planar version
     // used: the splat now has to cover the voxel's extent out of plane too.
@@ -362,9 +364,12 @@ class OcclusionBoundaryExtractor {
     const auto at = [&](int ia, int ie) -> double& {
       return depth[static_cast<size_t>(ie) * n_az + ia];
     };
+    std::vector<char> beyond(static_cast<size_t>(n_az) * n_el, 0);
+    const auto bat = [&](int ia, int ie) -> char& {
+      return beyond[static_cast<size_t>(ie) * n_az + ia];
+    };
 
     for (const auto& p : occ_pts) {
-      if (p.z() < silhouette_min_z_) continue;
       const double dx = p.x() - ego.x();
       const double dy = p.y() - ego.y();
       const double dz = p.z() - ego.z();
@@ -373,7 +378,8 @@ class OcclusionBoundaryExtractor {
       // corners reach sqrt(3) * query_range, so without the clip a direction
       // pointing at a corner sees half again as far as one pointing at a face
       // and the range profile has a jump built into it at every corner.
-      if (r < silhouette_min_range_ || r > query_range_) continue;
+      if (r < silhouette_min_range_ || r > r_search) continue;
+      const bool is_beyond = r > query_range_;
 
       const double theta = std::atan2(dy, dx);
       const double phi = std::asin(std::max(-1.0, std::min(1.0, dz / r)));
@@ -399,6 +405,10 @@ class OcclusionBoundaryExtractor {
       for (int e = e0; e <= e1; ++e) {
         for (int a = a0; a <= a1; ++a) {
           const int aw = ((a % n_az) + n_az) % n_az;   // wrap, negatives included
+          if (is_beyond) {
+            bat(aw, e) = 1;
+            continue;
+          }
           double& d = at(aw, e);
           d = std::min(d, r);
         }
@@ -451,6 +461,9 @@ class OcclusionBoundaryExtractor {
             // empty bin meaning "outside the sensor's vertical FOV" rather than
             // "open space" is the elevation range, which simply never allocates
             // an out-of-FOV bin to fire on.
+            const int ea = std::isfinite(a) ? ja : ia;
+            const int ee = std::isfinite(a) ? je : ie;
+            if (bat(ea, ee)) continue;
             near_r = std::isfinite(a) ? a : b;
             far_is_forward = std::isfinite(a);
           } else {
@@ -491,6 +504,7 @@ class OcclusionBoundaryExtractor {
           const Vec3f dir = dir_of(theta, phi);
 
           const Vec3f edge = ego + near_r * dir;
+          if (edge.z() < silhouette_min_z_) continue;
           edge_cloud.push_back(pcl::PointXYZ(static_cast<float>(edge.x()),
                                              static_cast<float>(edge.y()),
                                              static_cast<float>(edge.z())));
@@ -562,7 +576,7 @@ class OcclusionBoundaryExtractor {
     // the ego pose and the query box with it.
     if (silhouette_en_) {
       if (silhouette_3d_) {
-        publishSilhouette_3d(ego, box_min, box_max);
+        publishSilhouette_3d(ego);
       } else {
         publishSilhouette_2d(ego, box_min, box_max);
       }
