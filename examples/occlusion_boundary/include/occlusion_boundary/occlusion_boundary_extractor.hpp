@@ -370,6 +370,7 @@ class OcclusionBoundaryExtractor {
     };
 
     for (const auto& p : occ_pts) {
+      if (p.z() < silhouette_min_z_) continue;
       const double dx = p.x() - ego.x();
       const double dy = p.y() - ego.y();
       const double dz = p.z() - ego.z();
